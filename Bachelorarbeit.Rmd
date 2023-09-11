@@ -1,0 +1,1330 @@
+---
+title: "Bachelorarbeit"
+author: "Krispin Krüger"
+date: "2023-05-14"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    toc_float: yes
+    toc: yes
+    numbered: yes
+    theme: journal
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Global options
+options(stringsAsFactors = FALSE)
+#Set path permanently for all code chunks
+knitr::opts_knit$set(root.dir = '/Users/krispinkruger/Krüger/Bachelorarbeit/Data')
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+# 1. Packages einlesen
+
+```{r, echo=FALSE, results='hide', include=FALSE}
+library(foreign)
+#install.packages("ggplot2")
+library(ggplot2)
+#install.packages("tidyverse")
+library(tidyverse)
+#install.packages("plotly")
+library(plotly)
+#install.packages("gapminder")
+library(gapminder)
+#install.packages("psych")
+library(psych)
+#install.packages("car")
+library(car)
+library(carData)
+#install.packages("forcats")
+library(forcats)
+#install.packages("DescTools")
+library(DescTools)
+#install.packages("e1071")
+library(e1071)
+#install.packages("sjPlot")
+#install.packages("patchwork")
+library(patchwork)
+#install.packages("gridExtra")
+library(gridExtra)
+#install.packages("QuantPsyc")
+#install.packages("lm.beta")
+library(lm.beta)
+library(sjPlot)
+library(glmmTMB)
+#install.packages("tinytext")
+library(tinytex)
+#tinytex::install_tinytex()
+#install_tinytex()
+#install.packages("modelsummary")
+library(modelsummary)
+#install.packages("stargazer")
+library(stargazer)
+#install.packages("webshot")
+library(webshot)
+#install.packages("Hmisc")
+library(Hmisc)
+#install.packages("dplyr")
+library(dplyr)
+#install.packages("VIM", dependencies = TRUE)
+library(VIM)
+#install.packages("mice")
+library(mice)
+#install.packages("ggpubr")
+library(ggpubr)
+#install.packages("vtable")
+library(vtable)
+#install.packages("lme4")
+library(lme4)
+#install.packages("lmtest")
+library(lmtest)
+#install.packages("easystats")
+library(easystats)
+#install.packages("esquisse")
+library(esquisse)
+#install.packages("devtools")
+library(openai)
+require(devtools)
+#install.packages("pander")
+library(pander)
+#install.packages("tableHTML")
+library(tableHTML)
+#install.packages("eurostat")
+library(eurostat)
+#install.packages("leaflet")
+library(leaflet)
+#install.packages("sf")
+library(sf)
+#install.packages("scales")
+library(scales)
+#install.packages("cowplot")
+library(cowplot)
+#install.packages("ggthemes")
+library(ggthemes)
+#install.packages("kableExtra")
+library(kableExtra)
+```
+
+------------------------------------------------------------------------
+
+# 2. Daten einlesen
+
+-   Ich nutze Daten der 10 Runde des ESS, mit 33351 Befragten, über 586 Variablen
+-   soll ich die beiden Datensätze miteinader Mergen? Bei ess9 sind Daten für alle relevanten Vorhanden außer für Griechenland und Rumänien, für ess10 sind diese vorhanden aber nicht für Deutschland
+
+```{r}
+#Einlesen vom ESS-Datensatz
+ess <- read.spss("/Users/krispinkruger/Krüger/Bachelorarbeit/Data/ESS9e03_1/ESS9e03_1.sav"
+                   ,use.value.labels = FALSE,
+                   to.data.frame = TRUE,
+                   reencode = TRUE)
+attr(ess$cntry, "value.labels")
+ess10 <- read.spss("/Users/krispinkruger/Krüger/Bachelorarbeit/Data/ESS10 2/ESS10.sav",
+                   use.value.labels = F,
+                   to.data.frame = T,
+                   reencode = T)
+CorruptionIndex <- read.spss("./GCB_Edition10_EU_2021.sav",
+                             use.value.labels = F,
+                             to.data.frame = T,
+                             reencode = T)
+nrow(CorruptionIndex)#40663 Befragte 
+ncol(CorruptionIndex)#75 Variablen
+
+# Überprüfen, ob Werte vorhanden sind
+any_values <- any(!is.na(ess$trstprl[ess$cntry == "LU"]))
+# Ausgabe des Ergebnisses
+if (any_values) {
+  print("Werte vorhanden")
+} else {
+  print("Keine Werte vorhanden")
+}
+
+#Variablen anzeigen 
+#View(ess)
+#names(ess)
+nrow(ess) #-->  49519 Befragte 
+ncol(ess) #--> 572 Variablen 
+#Subset der relevanten Länder 
+# Definiere die gewünschten Ländercodes
+countries <- c("BE", "BG", "DK", "DE", "EE", "FR", "IE", "IT", "HR", "LV", "LT", "NL", "AT", "PL", "PT", "SE", "SK", "SI", "ES", "CZ", "HU", "CY")
+countries_post2004 <- c("HR", "BG", "CZ", "EE",  "LT", "LV", "PL", "CY", "SI", "SK", "HU")
+countries_pre2004 <- c("AT", "BE", "FR", "DE", "IE", "IT", "NL", "PT", "ES")
+countries_scandi <- c("SE", "DK")
+# Subset des Datensatzes "ess" basierend auf den Ländercodes
+ess_subset <- subset(ess, cntry %in% countries)
+ess_pre2004 <- subset(ess, cntry %in% countries_pre2004)
+ess_post2004 <- subset(ess, cntry %in% countries_post2004)
+ess_scandi <- subset(ess, cntry %in% countries_scandi)
+#Malta, Griechenland und Rumänien fehlen im Datensatz 
+
+```
+
+## 2.1 Wahrgenommene Korruption
+
+-   Daten von Transparency International werden eingelesen
+
+-   Experteneinschätzung aufgrund von mehreren Makrovariablen (= es wird keine individuelle Wahrnehmung geschätzt)
+
+-   Länder sind: Belgien, Bulgarien, Dänemark, Deutschland, Estland, Finnland, Frankreich, (Griechenland), Irland, Italien, Kroatien, Lettland, Litauen, Luxemburg, (Malta), Niederlande, Österreich, Polen, Portugal, (Rumänien), Schweden, Slowakei, Slowenien, Spanien, Tschechien, Ungarn, Zypern
+
+-   Frage: Soll ich nur zu den EU27-Staaten die Beobachtung durchführen (sind ja nur vom EU-Parlament betroffen, oder auch Staaten, die Beitrittskandidaten sind und Freihandelsabkommen haben und damit indirekt betroffen sind?)
+
+-   Für eine einfachere Interpretation der Ergebnisse wird die Skala von einer 100 auf eine 10 reduziert, damit die UV und AV die gleiche Skala haben
+
+```{r}
+#Zuweisung der Werte zu den Ländern 
+ess_subset$corruption[ess_subset$cntry == "BE"] <- 7.5
+ess_subset$corruption[ess_subset$cntry == "BG"] <- 4.3
+ess_subset$corruption[ess_subset$cntry == "DK"] <- 8.7
+ess_subset$corruption[ess_subset$cntry == "DE"] <- 8.0
+ess_subset$corruption[ess_subset$cntry == "EE"] <- 7.4
+ess_subset$corruption[ess_subset$cntry == "FI"] <- 8.6
+ess_subset$corruption[ess_subset$cntry == "FR"] <- 6.9
+ess_subset$corruption[ess_subset$cntry == "GR"] <- 4.8
+ess_subset$corruption[ess_subset$cntry == "IE"] <- 7.4
+ess_subset$corruption[ess_subset$cntry == "IT"] <- 5.3
+ess_subset$corruption[ess_subset$cntry == "HR"] <- 4.7
+ess_subset$corruption[ess_subset$cntry == "LV"] <- 5.6
+ess_subset$corruption[ess_subset$cntry == "LT"] <- 6.0
+ess_subset$corruption[ess_subset$cntry == "LU"] <- 8.0
+ess_subset$corruption[ess_subset$cntry == "NL"] <- 8.2
+ess_subset$corruption[ess_subset$cntry == "AT"] <- 7.7
+ess_subset$corruption[ess_subset$cntry == "PL"] <- 5.8
+ess_subset$corruption[ess_subset$cntry == "PT"] <- 6.2
+ess_subset$corruption[ess_subset$cntry == "RO"] <- 4.4
+ess_subset$corruption[ess_subset$cntry == "SE"] <- 8.5 
+ess_subset$corruption[ess_subset$cntry == "SK"] <- 5.0
+ess_subset$corruption[ess_subset$cntry == "SI"] <- 6.0
+ess_subset$corruption[ess_subset$cntry == "ES"] <- 6.2
+ess_subset$corruption[ess_subset$cntry == "CZ"] <- 5.6
+ess_subset$corruption[ess_subset$cntry == "HU"] <- 4.4
+ess_subset$corruption[ess_subset$cntry == "CY"] <- 5.8
+
+Desc(ess_subset$corruption)
+```
+
+```{r}
+#hohe und niedrige wahrgenomme Korruption alles was unter dem EU Average von 64 liegt hat eine hohe wahrgenommene Korurption, alles was darüber ist hat eine niedrige wahrgenommene Korruption 
+
+#hohe wahrgenommene Korruption 
+ess_subset$corruption_high[ess_subset$cntry == "BG"] <- 4.3
+ess_subset$corruption_high[ess_subset$cntry == "GR"] <- 4.8
+ess_subset$corruption_high[ess_subset$cntry == "IT"] <- 5.3
+ess_subset$corruption_high[ess_subset$cntry == "HR"] <- 4.7
+ess_subset$corruption_high[ess_subset$cntry == "LV"] <- 5.6
+ess_subset$corruption_high[ess_subset$cntry == "LT"] <- 6.0
+ess_subset$corruption_high[ess_subset$cntry == "PL"] <- 5.8
+ess_subset$corruption_high[ess_subset$cntry == "PT"] <- 6.2
+ess_subset$corruption_high[ess_subset$cntry == "RO"] <- 4.4
+ess_subset$corruption_high[ess_subset$cntry == "SK"] <- 5.0
+ess_subset$corruption_high[ess_subset$cntry == "SI"] <- 6.0
+ess_subset$corruption_high[ess_subset$cntry == "ES"] <- 6.2
+ess_subset$corruption_high[ess_subset$cntry == "CZ"] <- 5.6
+ess_subset$corruption_high[ess_subset$cntry == "HU"] <- 4.4
+ess_subset$corruption_high[ess_subset$cntry == "CY"] <- 5.8
+
+#niedrige wahrgenommene Korruption 
+ess_subset$corruption_low[ess_subset$cntry == "BE"] <- 7.5
+ess_subset$corruption_low[ess_subset$cntry == "DK"] <- 8.7
+ess_subset$corruption_low[ess_subset$cntry == "DE"] <- 8.0
+ess_subset$corruption_low[ess_subset$cntry == "EE"] <- 7.4
+ess_subset$corruption_low[ess_subset$cntry == "FI"] <- 8.6
+ess_subset$corruption_low[ess_subset$cntry == "FR"] <- 6.9
+ess_subset$corruption_low[ess_subset$cntry == "IE"] <- 7.4
+ess_subset$corruption_low[ess_subset$cntry == "LU"] <- 8.0
+ess_subset$corruption_low[ess_subset$cntry == "NL"] <- 8.2
+ess_subset$corruption_low[ess_subset$cntry == "AT"] <- 7.7
+ess_subset$corruption_low[ess_subset$cntry == "SE"] <- 8.5 
+
+
+
+
+
+```
+
+### 2.1.1 Heatmap
+
+```{r}
+df <- data.frame(
+  col1 = c("BE", "BG", "DE", "EE", "FI", "FR", "IE", "IT", "HR", "LV", "LT", "NL", "AT", "PL", "PT", "SE", "SK", "SI", "ES", "CZ", "HU", "CY"),
+                  col2 = c(75, 43, 80, 74, 86, 69, 74, 53, 47, 56, 60, 82, 77, 58, 62, 85, 50, 60, 62, 56, 44, 58))
+names(df)[names(df) == "col1"] <- "geo"
+names(df)[names(df) == "col2"] <- "means"
+names(df)
+tableHTML::tableHTML(df)
+
+
+#Grafik
+
+
+
+# Get the world map
+get_eurostat_geospatial(resolution = 10, 
+                        nuts_level = 0, 
+                        year = 2016)
+SHP_0 <- get_eurostat_geospatial(resolution = 10, 
+                                 nuts_level = 0, 
+                                 year = 2016)
+SHP_0 %>%
+  ggplot() + 
+  geom_sf()
+
+#27 EU Länder auswählen 
+
+
+SHP_27 <- SHP_0 %>% 
+  select(geo) %>%
+  inner_join(df, by = "geo") %>%
+  arrange(geo) %>%
+  st_as_sf()
+
+
+SHP_27 %>% 
+  ggplot() +
+  geom_sf() +
+  scale_x_continuous(limits = c(-10, 35)) +
+  scale_y_continuous(limits = c(35, 65)) +
+  theme_void()
+
+df_shp <- df %>% 
+  select(geo, means) %>%
+  inner_join(SHP_27, by = "geo") %>%
+  st_as_sf()
+
+```
+
+```{r}
+gg_theme <- list(
+  theme_void(),
+  scale_x_continuous(limits = c(-10, 35)),
+  scale_y_continuous(limits = c(36, 70)),
+  aes(fill = means.x),
+  geom_sf(size = 0.5,
+          color = "#F3F3F3"
+            ),
+  scale_fill_gradient2_tableau(palette = "Red-Blue-White Diverging",
+                               breaks = seq(from = 0, to = 100, by = 4)),
+  labs(subtitle = "Skala von 0-100 (Je höher desto besser)",
+       caption = "Data: Transparency International 2019"
+       )
+)
+
+gg_theme2 <- list(
+  theme_void(),
+  scale_x_continuous(limits = c(-10, 35)),
+  scale_y_continuous(limits = c(36, 70)),
+  aes(fill = means.x),
+  geom_sf(size = 0.5,
+          color = "#F3F3F3"
+            ),
+  scale_fill_gradient2_tableau(palette = "Red-Blue-White Diverging",
+                               breaks = seq(from = 0, to = 10, by = 0.3)),
+  labs(subtitle = "Skala von 0-10 (Je höher desto besser)",
+       caption = "Data: ESS9 (2019)"
+       )
+)
+
+gg_theme3 <- list(
+  theme_void(),
+  scale_x_continuous(limits = c(-10, 35)),
+  scale_y_continuous(limits = c(36, 70)),
+  aes(fill = means.x),
+  geom_sf(size = 0.5,
+          color = "#F3F3F3"
+            ),
+  scale_fill_gradient2_tableau(palette = "Red-Blue-White Diverging",
+                               breaks = seq(from = 0, to = 100000, by = 7500)),
+  labs(subtitle = "GNP per capita in $",
+       caption = "Data: WorlBank (2019)"
+       )
+)
+
+gg_theme4 <- list(
+  theme_void(),
+  scale_x_continuous(limits = c(-10, 35)),
+  scale_y_continuous(limits = c(36, 70)),
+  aes(fill = means.x),
+  geom_sf(size = 0.5, color = "#F3F3F3"),
+  scale_fill_gradient2_tableau(palette = "Red-Blue-White Diverging",
+                               breaks = rev(seq(from = 0, to = 100, by = 1.5))),
+  labs(subtitle = "Gini-Index (je niedriger = rot desto besser)",
+       caption = "Data: WorlBank (2019)")
+)
+```
+
+```{r}
+#Heatmap wahrgenomme Korruption
+g1  <- df_shp %>%
+  ggplot() +
+  labs(title = "Wahrgenommene Korruption in Europa") +
+  gg_theme
+g1
+ggplotly()
+ggsave(filename = "Heatmap_Korruption.png", plot = g1, width = 8, height  = 7, dpi = 1000)
+```
+
+### 2.1.2 Wahrgenommene Korruption Individual
+
+-   Es werden Daten des GCB genutzt (ebenfalls Transparency International)
+
+    -   Es wird auf einer Likertskala abgefragt, wie die individuelle Wahrnehmung zur Korruption ist, gegenüber verschiedenen repräsentativen und regulativen Institutionen
+
+    -   Da nicht selbe Individuen (= Index wird gebildet, und den Individuen des gesamten Datensatzes zugewiesen) ==\> Keine Individualdaten mehr, aber Index wurde aufgrund von Individualdaten gebildet
+
+## 2.1. Rep-Reg Korruption
+
+-   Es werden die Daten von Transparency International genutzt, aber es kann keine sinnvolle Regression gerechnet werden, da die Daten vom ESS von 2018 sind und die Aufteilung von Transparency International von 2022. Leider sind die Daten nicht aus der Vergangenheit vorhanden und im akutellen ESS sind noch nicht die Daten für alle Länder vorhanden, jedoch, wäre dies eine sinnvolle weitergehende Betrachtung in späteren Forschungsvorhaben, welche die Analyse replizieren und mit aktuelleren Daten falsifizieren wollen.
+
+## 2.2 Politisches Vertrauen
+
+-   Es werden die Daten des ESS9 genutzt
+
+-   Skala von 0-10 (je höher desto besser)
+
+-   repräsentative Institutionen: Landesparlament, - Politiker, Parteien, EU-Parlament --\> trstprl, trstplt, trstprt, trstep
+
+-   regulative Institutionen: Justiz, Polizei --\> trstlgl, trstplc,
+
+```{r}
+#Kontrolle der NA's
+var <- c("trstprl", "trstplt", "trstprt", "trstep", "trstlgl", "trstplc")
+ess_subset$missings <- rowSums(is.na(ess_subset[, var]))
+table(ess_subset$missings) #kleinste gemeinsame Fallzahl ist 36767
+sum(is.na(ess_subset[, var])) #6211 Missings
+#Anteil an Missings
+(6211/40263) * 100
+
+```
+
+Wir haben über die 6 Variablen insgesamt 6211 Missings, was 15,4% der Fälle entspricht, welche deshalb imputiert werden sollten mit dem Misc--Verfahren. Zunächst wird aber noch überprüft ob es einen inhaltlich sinnvollen Grund und Korrelation gibt der NA's mit der abhängigen Variable. Falls dies zutrifft, kann es sich um eine systematische Verzerrung handeln.
+
+```{r}
+ess.NA <- subset(ess_subset[,var])
+#Funktion für Grafik
+propmiss <- function(dataframe) {
+  m <- sapply(dataframe, function(x) {
+    data.frame(
+      nmiss=sum(is.na(x)), 
+      n=length(x), 
+      propmiss=sum(is.na(x))/length(x)
+    )
+  })
+  d <- data.frame(t(m))
+  d <- sapply(d, unlist)
+  d <- as.data.frame(d)
+  d$variable <- row.names(d)
+  row.names(d) <- NULL
+  d <- cbind(d[ncol(d)],d[-ncol(d)])
+  return(d[order(d$propmiss), ])
+}
+miss_vars<-propmiss(ess.NA)
+miss_vars_mean<-mean(miss_vars$propmiss)
+miss_vars_ges<- miss_vars  %>% arrange(desc(propmiss)) 
+plot <-ggplot(miss_vars_ges,aes(x=reorder(variable,propmiss),y=propmiss*100)) + 
+  geom_point(size=3) +
+  coord_flip() + 
+  theme_bw() + xlab("") +ylab("NAs pro Variable in %") +
+  theme(panel.grid.major.x=element_blank(),
+        panel.grid.minor.x=element_blank(),
+        panel.grid.major.y=element_line(colour="grey",linetype="dashed")) +
+  ggtitle("Prozent an NAs")
+plot
+ggsave(filename = "NA_proptable.png", plot = plot, width = 8, height  = 7, dpi = 1000)
+
+aggr(ess.NA, numbers=TRUE, prop=TRUE, combined=TRUE, sortVars=F, vscale = 1)
+
+```
+
+### 2.2.1 PCA
+
+```{r}
+#Bartlett Test ob Korrelation (!=0) gibt 
+cortest.bartlett(ess.NA)
+#Kaiser-Meyer-Olkin-Kriterium zur Beurteilung der Eignung der Daten zur Durchführung einer Faktoranalyse 
+kmo <- KMO(ess.NA)
+kmo
+#geordnete MSAi
+kmo$MSAi[order(kmo$MSAi)]
+```
+
+Bei einem KMO von 0.84 sehen wir eine gute bis sehr hohe Eignung für die Faktoranalyse. Die Variablen weisen starke linerare Abhängigkeiten auf. Es müssen keine Items ausgeschlossen werden, da alle über 0.5 liegen, was bei einem Wert unter 0.5 empfohlen ist.
+
+```{r}
+#Anzahl der Komponenten 
+library(mice)
+imputed_data <- mice(ess.NA, m = 50, method = "pmm")
+completed_data <- complete(imputed_data)
+fa.parallel(completed_data, fa = "pc")
+```
+
+```{r}
+# Installiere das psych-Paket, wenn es noch nicht installiert ist
+# install.packages("psych")
+
+# Lade das psych-Paket
+library(psych)
+
+# Durchführung der explorativen Faktoranalyse (EFA)
+efa_result <- fa(completed_data, nfactors = 2, rotate = "varimax")
+
+# Zeige die Ergebnisse der EFA an
+print(efa_result)
+fa.diagram(efa_result, simple = T)
+library(ggplot2)
+
+# Daten für die Faktorladungen
+faktorladungen <- data.frame(
+  Variable = c("trstprl", "trstplt", "trstprt","trstep", "trstlgl", "trstplc"),
+  Faktor1 = c(0.64, 0.86, 0.88, 0.55 , 0.35, 0.27),
+  Faktor2 = c(0.52, 0.35, 0.31, 0.38, 0.85, 0.66)
+)
+
+# Balkendiagramm für Faktorladungen erstellen
+plot4 <- ggplot(faktorladungen, aes(x = Variable, y = Faktor1, fill = "Faktor 1")) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_bar(aes(y = Faktor2, fill = "Faktor 2"), stat = "identity", position = "dodge") +
+  labs(x = "Variable", y = "Faktorladung") +
+  scale_fill_manual(values = c("Faktor 1" = "darkblue", "Faktor 2" = "brown")) +
+  theme_minimal()
+plot4
+ggsave(filename = "Faktorladungen.png", plot = plot4, width = 8, height  = 7, dpi = 1000)
+```
+
+### 2.2.2 Indexe erstellen
+
+```{r}
+ess_subset$rep_institution <- rowSums(completed_data[, c("trstplt", "trstprt", "trstprl", "trstep")], na.rm = T) /4
+Desc(ess_subset$rep_institution)
+
+ess_subset$reg_institution <- rowSums(completed_data[,c("trstlgl", "trstplc")], na.rm = T) /2
+Desc(ess_subset$reg_institution)
+
+```
+
+#### Index für Pre 2004 EU Mitglieder
+
+```{r}
+ess_pre2004$rep_institution_pre_2004 <- rowMeans(ess_pre2004[, c("trstplt", "trstprt", "trstprl", "trstep")], na.rm = T)
+```
+
+#### Grafik
+
+```{r}
+#Grafik
+plot2 <- ggplot(ess_subset, aes( rep_institution)) +
+ geom_bar(aes(y = ( ..count.. )/sum( ..count.. )),
+ fill = "darkblue", color = "lightblue")+
+ scale_y_continuous(labels = scales::percent) +
+ scale_x_continuous(breaks = seq(0,10),
+ labels = c("garkein Vertrauen",
+ "1", "2", "3", "4", "5", "6", "7", "8", "9",
+ "volles Vertrauen"))+
+ labs(title = "Vertrauen in repräsentative Instiutionen",
+ caption = "Data: ESS9 (2019)",
+ y = "Häufigkeit in Prozent",
+ x ="Vertauen in repräsentative Institutionen")+
+ theme_bw()
+plot2
+ggsave(filename = "Verteilung_rep.png", plot = plot2, width = 8, height  = 7, dpi = 1000)
+ks.test(ess_subset$rep_institution, "pnorm", mean = mean(ess_subset$rep_institution), sd = sd(ess_subset$rep_institution))
+
+plot3 <- ggplot(ess_subset, aes( reg_institution))+
+ geom_bar(aes(y = ( ..count..)/sum( ..count..)),
+ fill = "darkblue", color = "lightblue")+
+ scale_y_continuous(labels = scales::percent)+
+ scale_x_continuous(breaks = seq(0,10),
+ labels = c("garkein Vertrauen",
+ "1", "2", "3", "4", "5", "6", "7", "8", "9",
+ "volles Vertrauen "))+
+ labs(title = "Vertrauen in regulative Instiutionen",
+ caption = "Data: ESS9 (2019)",
+ y = "Häufigkeit in Prozent",
+ x ="Vertauen in regulative Institutionen")+
+ theme_bw()
+plot3
+ggsave(filename = "Verteilung_reg.png", plot = plot3, width = 8, height  = 7, dpi = 1000)
+ks.test(ess_subset$reg_institution, "pnorm", mean = mean(ess_subset$reg_institution), sd = sd(ess_subset$reg_institution))
+
+```
+
+#### Heatmap - repräsentative, regulative Institutionen
+
+```{r}
+
+rel <- subset(ess_subset, select = c("cntry", "rep_institution", "reg_institution"))
+unique(ess_subset$cntry)
+
+#repräsentative Institutionen
+mean_df <- as.data.frame(base::tapply(rel$rep_institution, rel$cntry, FUN = mean, na.rm = T))
+tableHTML::tableHTML(mean_df)
+mean_df_sorted <- as.data.frame(sort(base::tapply(rel$rep_institution, rel$cntry, FUN = mean, na.rm = T)))
+tableHTML::tableHTML(mean_df_sorted)
+
+
+df1 <- data.frame(
+  col1 = c("HR", "BG", "SI", "LV", "ES", "CY","LT", "PT", "IT", "FR", "PL", "SK", "CZ", "EE", "IE", "HU", "DE", "BE", "AT", "SE", "FI", "DK", "NL"),
+                  col2 = c(2.40704, 2.57393,3.19954,3.28268,3.38519,3.51184,3.53188,3.53412,3.66202,3.67662,3.68767,3.76847,3.84967,4.28453,4.31634,4.32661,4.40575,4.54966,4.56132,5.29191,5.29957,5.46406,5.48984))
+names(df1)[names(df1) == "col1"] <- "geo"
+names(df1)[names(df1) == "col2"] <- "means"
+names(df1)
+tableHTML::tableHTML(df1)
+
+#Heatmap
+get_eurostat_geospatial(resolution = 10,
+                        nuts_level = 0,
+                        year = 2016)
+
+SHP_1 <- get_eurostat_geospatial(resolution = 10,
+                                 nuts_level = 0,
+                                 year = 2016)
+
+SHP_27_1 <- SHP_1 %>% 
+  select(geo) %>%
+  inner_join(df1, by = "geo") %>%
+  arrange(geo) %>%
+  st_as_sf()
+
+SHP_27_1 %>% 
+  ggplot() +
+  geom_sf() +
+  scale_x_continuous(limits = c(-10, 35)) +
+  scale_y_continuous(limits = c(35, 65)) +
+  theme_void()
+
+df_shp_1 <- df1 %>% 
+  select(geo, means) %>%
+  inner_join(SHP_27_1, by = "geo") %>%
+  st_as_sf()
+g2 <- df_shp_1 %>%
+  ggplot() +
+  labs(title = "Durchschnittliches Vertrauen in repräsentative Institutionen") +
+  gg_theme2
+g2
+ggsave(filename = "Heatmap_PV_rep.png", plot = g2, width = 8, height  = 7, dpi = 1000)
+
+```
+
+```{r}
+#regulative Institutionen
+mean_df <- as.data.frame(base::tapply(rel$reg_institution, rel$cntry, FUN = mean, na.rm = T))
+tableHTML::tableHTML(mean_df)
+mean_df_sorted <- as.data.frame(sort(base::tapply(rel$reg_institution, rel$cntry, FUN = mean, na.rm = T)))
+tableHTML::tableHTML(mean_df_sorted)
+
+df2 <- data.frame(
+  col1 = c("BG", "HR", "SK", "CY", "LV", "PL", "SI", "PT", "LT", "CZ", "IE", "ES", "FR", "BE", "HU", "IT", "EE", "DE", "SE", "NL", "AT", "FI", "DK"),
+                  col2 = c(3.46656, 3.8837,4.68375,4.88092,4.97004,5.03733,5.04628,5.21611,5.48719,5.52585,5.77347,5.77698,5.86294,5.94709,5.95846,6.00291,6.47164,6.60984,6.74789,6.82068,7.02821,7.63789,7.83906))
+names(df2)[names(df2) == "col1"] <- "geo"
+names(df2)[names(df2) == "col2"] <- "means"
+names(df2)
+tableHTML::tableHTML(df2)
+
+#Heaptmap
+#Heatmap
+get_eurostat_geospatial(resolution = 10,
+                        nuts_level = 0,
+                        year = 2016)
+
+SHP_2 <- get_eurostat_geospatial(resolution = 10,
+                                 nuts_level = 0,
+                                 year = 2016)
+
+SHP_27_2 <- SHP_2 %>% 
+  select(geo) %>%
+  inner_join(df2, by = "geo") %>%
+  arrange(geo) %>%
+  st_as_sf()
+
+
+SHP_27_2 %>% 
+  ggplot() +
+  geom_sf() +
+  scale_x_continuous(limits = c(-10, 35)) +
+  scale_y_continuous(limits = c(35, 65)) +
+  theme_void()
+
+df_shp_2 <- df2 %>% 
+  select(geo, means) %>%
+  inner_join(SHP_27_2, by = "geo") %>%
+  st_as_sf()
+g3 <- df_shp_2 %>%
+  ggplot() +
+  labs(title = "Durchschnittliches Vertrauen in regulative Institutionen") +
+  gg_theme2
+g3
+ggsave(filename = "Heatmap_PV_reg.png", plot = g3, width = 8, height  = 7, dpi = 1000)
+
+```
+
+#### Deskriptive Statistik
+
+```{r}
+sumtable(ess_subset, vars = c('rep_institution', 'reg_institution', 'corruption')
+          ,summ = list(
+           c('notNA(x)', 'mean(x)', 'median(x)', 'sd(x)', 'min(x)', 'max(x)', 'pctile(x)[25]',  'pctile(x)[75]')
+         ),
+ summ.names = list(
+         c('N', 'Mean', 'Median', 'Standard Error', 'Minimum', 'Maximum', '1 Quantil', '4 Quantil')
+         )
+         ,title = "Deskriptive Statistik der UV und AV"
+   ,labels = c("rep. Institutionen", "reg. Institutionen", "wahrgenomme Korruption"), file = 'Deskriptive Statistik AV u. UV')
+
+```
+
+## 2.3 Kontrollvariablen
+
+### 2.3.1 Individualebene
+
+#### politisches Interesse (polintr)
+
+-   Skala von 1-4 (hoch ist schlecht)
+
+    -   wird rekodiert und zum Dummy gemacht, wobei kein Interesse die Referenz ist
+
+```{r}
+attributes(ess_subset$polintr)
+ess_subset$polInteresse <- car::recode(ess_subset$polintr,
+                                "1:2 = 1;
+                                3:4 = 2;
+                                else = NA")
+#Kein Interese ist Referenz 
+polInteresse <- as.factor(ess_subset$polInteresse)
+ess_subset$PolInteresse_dummy <- relevel(polInteresse, ref = 2)
+```
+
+#### **Geschlecht** (gndr)
+
+-   1 = Male, 2 = Female
+
+-   wird rekodiert zum Dummy, wobei 1 = Male die Referenz ist
+
+```{r}
+attributes(ess$gndr)
+ess_subset$geschlecht <- car::recode(ess_subset$gndr,
+                              "1 = 0;
+                              2 = 1;
+                              else = NA")
+Desc(ess_subset$geschlecht)
+```
+
+#### **Alter** (agea)
+
+-   Alter wird Mittelwertzentriert um Haupteffekt interpretierbar zu machen
+
+```{r}
+Desc(ess_subset$agea)
+center_scale <- function(x) {
+  scale(x, scale = F)
+}
+ess_subset$Alter_zentriert <- center_scale(ess_subset$agea)
+table(ess_subset$Alter_zentriert)
+```
+
+#### **Bildung (eisced)**
+
+--\> harmonisierte Bildungsvariable zwischen den Staaten, um den unterschiedlichen Abschlüssen gerecht zu werden
+
+-   Skala ist harmonisiert über alle Länder hinweg
+-   lower Education wird als Referenz genutzt
+-   Es wird ein Dummy gebildet:
+    -   Lower Education: ES-ISCED I, ES-ISCED II (= early Childhood education / No education + primary education + lower secondary education)
+    -   Middle Education: ES-ISCED IIIb, ES-ISCED IIIa (= lower und uper tier secondary education
+    -   Higher Education: ES-ISCED IV, ES-ISCED V1, ES-ISCED V2 (short-cycle tertiary education + lower tertiary education, Bachelor + higher tertiary education, Masters and above)
+    -   lower education wird als Referenz gesetzt
+    -   Begründung nach Wordl Values Survey, welche diese Vereinfachung nutzen, um einen einfacheren Vergleich durchführen zu können
+
+```{r}
+attributes(ess$eisced)
+Desc(ess_subset$eisced)
+table(ess_subset$eisced)
+ess_subset$bildung <- car::recode(ess_subset$eisced,
+                                 "1:2 = 1;
+                                 3:4 = 2;
+                                 5:7 = 3;
+                                 else = NA")
+Bild <- as.factor(ess_subset$bildung)
+table(Bild)
+ess_subset$Bildung <- relevel(Bild, ref = 1)
+Desc(ess_subset$Bildung)
+```
+
+#### Einkommen
+
+-   Einkommen (hincfel) -\> Wie wird das Einkommen wahrgenommen, kommt man in der heutigen Welt damit zurecht?
+
+    -   Skala von 1-4 (je höher desto schlechter)
+
+    -   1 = Living Comfortably, "2 = Coping on Income, 3 = Difficult on Income, 4 = Very Difficult on Income
+
+-   Wenn Menschen komfortabel Leben ist es Referenz, da sie sich dann wsl nicht so sehr beeinflussen lassen von Korruption und dem Vertrauen (sie haben ja die Mittel, um sich Gehör zu verschaffen)
+
+```{r}
+attributes(ess_subset$hincfel)
+
+ess_subset$Einkommen <- car::recode(ess_subset$hincfel,
+                             "1:2 = 0;
+                             3:4 = 1; else = NA")
+Desc(ess_subset$Einkommen)
+```
+
+#### Politische Teilhabe
+
+-   (Index aus psppipla + psppsgva) --\> Index zur Einflussnahme auf Regierung und Politik (= Lässt politisches System ein Einfluss zu)
+-   Skala von 0-4 (je höher desto besser)
+
+```{r}
+ess_subset$Einfluss_Regierung <- car::recode(ess_subset$psppsgva,"
+                                          1 = 0;
+                                          2 = 1;
+                                          3 = 2;
+                                          4 = 3;
+                                          5 = 4;
+                                          else = NA")
+ess_subset$Einfluss_Politik <- car::recode(ess_subset$psppipla,"
+                                    1 = 0;
+                                    2 = 1;
+                                    3 = 2;
+                                    4 = 3;
+                                    5 = 4;
+                                    else = NA")
+Teilhabe <- c("Einfluss_Regierung", "Einfluss_Politik")
+ess_subset$polTeilhabe <- rowSums(ess_subset[, Teilhabe], na.rm = T) /2
+Desc(ess_subset$polTeilhabe)
+
+ks.test(ess_subset$polTeilhabe, "pnorm", mean=mean(ess_subset$polTeilhabe), sd=sd(ess_subset$polTeilhabe))
+```
+
+#### Fähigkeit zur politischen Teilhabe
+
+-   Einschätzung der eigenen Fähigkeit zur politischen Teilhabe (cptppola)
+
+    -   Skala von 1-5 (je höher desto besser)
+
+```{r}
+ess_subset$Fähigkeit_Teilhabe <- car::recode(ess_subset$cptppola,"
+                                      1 = 0;
+                                      2 = 1;
+                                      3 = 2;
+                                      4 = 3; 
+                                      5 = 4; 
+                                      else = NA")
+Desc(ess_subset$Fähigkeit_Teilhabe)
+```
+
+#### Religiösität (rlgdgr)
+
+--\> Stärke der Religiösität, unabhängig von der Religion, welche verfolgt wird
+
+-   Skala von 0-10 (je höher desto religiöser)
+
+```{r}
+Desc(ess_subset$rlgdgr)
+ess_subset$religiösität <- ess_subset$rlgdgr
+```
+
+#### Religionszugehörigkeit (rlgdnm)
+
+-   1 = Katholisch, 2 = Protestant, 3 = Eastern Orthodox, 4 = andere Form von Christentum, 5 = Judaismus, 6 = Islam, 7 = Eastern Religion, 8 = Andere nicht christliche Religionen
+
+-   Als Referenz werden die anderen nicht christlichen Religionen gesetzt
+
+-   Da die Religionszugehörigkeit ein Dummy ist, will ich nur Personen drinne haben, die eine hohe Religiosität haben, da die reine Zugehörigkeit keinen Effekt hat, sondern man auch die Werte der Religion vertreten muss, um einen Effekt zu erzielen. Da die Skala der Religiösität von 0-10 geht, werden also nur Personen mit einen wert über 5 gewählt also religiös gewählt.
+
+-   Durch die Einschränkung der Personen nur auf starke Religiösität wird natürlich die Fallzahl enorm eingeschränkt, da alle Personen die nicht religiös sind ausgeschlossen werden
+
+```{r}
+attributes(ess$rlgdnm)
+ess_subset$religion <- ifelse(ess_subset$rlgdgr > 5, ess_subset$rlgdnm, NA)
+table(ess_subset$religion)
+
+table(ess_subset$rlgdnm)
+ess_subset$religzu <- car::recode(ess_subset$rlgdnm, "
+                           1 = 1;
+                           2 = 2;
+                           3 = 3;
+                           4 = 4; 
+                           5 = 5;
+                           6 = 6;
+                           7:8 = 7;
+                           else = NA")
+rlz <- as.factor(ess_subset$religzu)
+ess_subset$religionszugehörigkeit <- relevel(rlz, ref = 7 )
+table(ess_subset$religionszugehörigkeit)
+Desc(ess_subset$religionszugehörigkeit)
+```
+
+#### 2.3.1.1 Deskriptive Statistik Individual
+
+```{r}
+sumtable(ess_subset, vars = c('polInteresse' ,'polTeilhabe', 'Einkommen', 'bildung', 'agea', 'geschlecht', 'religzu', 'GNP', 'Gini', 'Her')
+          ,summ = list(
+           c('notNA(x)', 'mean(x)', 'median(x)', 'sd(x)', 'min(x)', 'max(x)', 'pctile(x)[25]',  'pctile(x)[75]')
+         ),
+ summ.names = list(
+         c('N', 'Mean', 'Median', 'Standard Error', 'Minimum', 'Maximum', '1 Quantil', '4 Quantil')
+         )
+         ,title = "Deskriptive Statistik der individuellen Kontrollvariablen"
+   ,labels = c("pol. Interesse", "pol. Teilhabe (System)", "Fähigkeit mit Einkommen leben zu bestreiten", "Bildung (harmonisiert)", "Alter", "Geschlecht", "Religion","Bruttosozialprodukt", "Gini-Koeffizient", "Region der Herkunft"), file = 'Deskriptive Statistik Individual')
+```
+
+### 2.3.2 Kontextuelle Variablen
+
+#### Herkunft in Europa
+
+-   Gruppierung der Herkunftsländer, um zu prüfen, ob es ein Unterschied gibt, zwischen europäischen Regionen (inspiriert, nach Unterscheidung von Kołczyńska 2019: S.799)
+
+-   Die Gruppierung basiert auf dem Status Quo des Landes (= Ist es Demokratie oder nicht) und der Dauer seit der das Land eine Demokratie ist und in die EU integriert ist.
+
+    -   Länder mit EU-Beitritt 2004 oder später (= große Osterweiterung und das Baltikum)
+
+        -   Kroatien, Bulgarien, Tschechien, Estland, Ungarn, Lettland, Litauen, Polen, Zypern, Slowenien, Slowakei
+
+    -   Länder mit EU-Beitritt vor 2004 (= Gründungsmitglieder und direkte Nachfolge)
+
+        -   Österreich, Belgien, Frankreich, Deutschland, Irland, Italien, Niederlande, Portugal, Spanien, Großbritannien
+
+    -   Skandinavische Mitgliedsländer
+
+        -   Dänemark, Schweden
+
+```{r}
+#Erstellung der Ländervariabeln 
+post_2004 <- c("HR", "BG", "CZ", "EE",  "LT", "LV", "PL", "CY", "SI", "SK", "HU")
+pre_2004 <- c("AT", "BE", "FR", "DE", "IE", "IT", "NL", "PT", "ES")
+scandi <- c("SE", "DK")
+
+ess_subset$Her[ess_subset$cntry %in% post_2004] <- 1
+ess_subset$Her[ess_subset$cntry %in% pre_2004] <- 2 
+ess_subset$Her[ess_subset$cntry %in% scandi] <- 3
+
+Herkunft <- as.factor(ess_subset$Her)
+
+ess_subset$Herkunft <- relevel(Herkunft, ref = 3)
+Desc(ess_subset$Herkunft)
+
+```
+
+#### Bruttonationaleinkommen per capita
+
+-   ( in \$) als Indikator des Entwicklungsstands und der Lebenssituation der Bevölkerung
+
+    -   Daten sind von der WorldBank von 2019
+
+    -   Macht es Sinn sich überhaupt noch das BIP anzuschauen? Beschreibt das nicht einen ähnlichen Zusammenhang?
+
+```{r}
+ess_subset$GNP[ess_subset$cntry == "BE"] <- 48100
+ess_subset$GNP[ess_subset$cntry == "BG"] <- 9500
+ess_subset$GNP[ess_subset$cntry == "DK"] <- 63140
+ess_subset$GNP[ess_subset$cntry == "DE"] <- 49220
+ess_subset$GNP[ess_subset$cntry == "EE"] <- 23010
+ess_subset$GNP[ess_subset$cntry == "FI"] <- 49940
+ess_subset$GNP[ess_subset$cntry == "FR"] <- 42460
+ess_subset$GNP[ess_subset$cntry == "GR"] <- 19690
+ess_subset$GNP[ess_subset$cntry == "IE"] <- 63570
+ess_subset$GNP[ess_subset$cntry == "IT"] <- 34930
+ess_subset$GNP[ess_subset$cntry == "HR"] <- 15580
+ess_subset$GNP[ess_subset$cntry == "LV"] <- 17830
+ess_subset$GNP[ess_subset$cntry == "LT"] <- 19080
+ess_subset$GNP[ess_subset$cntry == "LU"] <- 77500
+ess_subset$GNP[ess_subset$cntry == "NL"] <- 51930
+ess_subset$GNP[ess_subset$cntry == "AT"] <- 51020
+ess_subset$GNP[ess_subset$cntry == "PL"] <- 15330
+ess_subset$GNP[ess_subset$cntry == "PT"] <- 23200
+ess_subset$GNP[ess_subset$cntry == "RO"] <- 12670
+ess_subset$GNP[ess_subset$cntry == "SE"] <- 56420
+ess_subset$GNP[ess_subset$cntry == "SK"] <- 19200
+ess_subset$GNP[ess_subset$cntry == "SI"] <- 26040
+ess_subset$GNP[ess_subset$cntry == "ES"] <- 30360
+ess_subset$GNP[ess_subset$cntry == "CZ"] <- 22120
+ess_subset$GNP[ess_subset$cntry == "HU"] <- 16570
+ess_subset$GNP[ess_subset$cntry == "CY"] <- 28560
+
+Desc(ess_subset$GNP)
+```
+
+##### Heatmap
+
+```{r}
+df3 <- data.frame(
+  col1 = c("AT","BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR","DE", "EL","HU", "IE", "IT", "LV", "LT","LU", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"),
+                  col2 = c(51020,48100,9500,15580,28560,22120,63140,23010,49940,42460,49220,19690,16570,63570,34930,17830,19080,77500,51930,15330,23200,12670,19200,26040
+,30360,56420))
+names(df3)[names(df3) == "col1"] <- "geo"
+names(df3)[names(df3) == "col2"] <- "means"
+names(df3)
+tableHTML::tableHTML(df3)
+
+get_eurostat_geospatial(resolution = 10,
+                        nuts_level = 0,
+                        year = 2016)
+
+SHP_3 <- get_eurostat_geospatial(resolution = 10,
+                                 nuts_level = 0,
+                                 year = 2016)
+
+SHP_27_3 <- SHP_3 %>% 
+  select(geo) %>%
+  inner_join(df3, by = "geo") %>%
+  arrange(geo) %>%
+  st_as_sf()
+
+SHP_27_3 %>% 
+  ggplot() +
+  geom_sf() +
+  scale_x_continuous(limits = c(-10, 35)) +
+  scale_y_continuous(limits = c(35, 65)) +
+  theme_void()
+
+df_shp_3 <- df3 %>% 
+  select(geo, means) %>%
+  inner_join(SHP_27_3, by = "geo") %>%
+  st_as_sf()
+g4 <- df_shp_3 %>%
+  ggplot() +
+  labs(title = "GNP in Europa in $") +
+  gg_theme3
+g4
+ggsave(filename = "Heatmap_GNP.png", plot = g4, width = 8, height  = 7, dpi = 1000)
+```
+
+#### **Gini-Koeffizient**
+
+-   (Daten der WorldBank (2019 = Ausnahmen sind Germany, Polen, und die Slowakei sind von 2018)
+-   Skala von 0-100 (je höher desto schlechter) bei 0 Perfekte Gleichheit und bei 100 perfekte Ungleichheit
+
+```{r}
+ess_subset$Gini[ess_subset$cntry == "BE"] <- 26
+ess_subset$Gini[ess_subset$cntry == "BG"] <- 40.5
+ess_subset$Gini[ess_subset$cntry == "DK"] <- 27.5
+ess_subset$Gini[ess_subset$cntry == "DE"] <- 31.8
+ess_subset$Gini[ess_subset$cntry == "EE"] <- 30.7
+ess_subset$Gini[ess_subset$cntry == "FI"] <- 27.1
+ess_subset$Gini[ess_subset$cntry == "FR"] <- 30.7
+ess_subset$Gini[ess_subset$cntry == "GR"] <- 33.6
+ess_subset$Gini[ess_subset$cntry == "IE"] <- 29.2
+ess_subset$Gini[ess_subset$cntry == "IT"] <- 35.2
+ess_subset$Gini[ess_subset$cntry == "HR"] <- 29.5
+ess_subset$Gini[ess_subset$cntry == "LV"] <- 35.7
+ess_subset$Gini[ess_subset$cntry == "LT"] <- 36
+ess_subset$Gini[ess_subset$cntry == "LU"] <- 33.4
+ess_subset$Gini[ess_subset$cntry == "NL"] <- 26
+ess_subset$Gini[ess_subset$cntry == "AT"] <- 29.8
+ess_subset$Gini[ess_subset$cntry == "PL"] <- 30.2
+ess_subset$Gini[ess_subset$cntry == "PT"] <- 34.7
+ess_subset$Gini[ess_subset$cntry == "RO"] <- 34.6
+ess_subset$Gini[ess_subset$cntry == "SE"] <- 28.9
+ess_subset$Gini[ess_subset$cntry == "SK"] <- 25
+ess_subset$Gini[ess_subset$cntry == "SI"] <- 24
+ess_subset$Gini[ess_subset$cntry == "ES"] <- 34.9
+ess_subset$Gini[ess_subset$cntry == "CZ"] <- 26.2
+ess_subset$Gini[ess_subset$cntry == "HU"] <- 29.7
+ess_subset$Gini[ess_subset$cntry == "CY"] <- 31.7
+```
+
+##### Heatmap
+
+```{r}
+
+Desc(ess_subset$Gini)
+df4 <- data.frame(
+  col1 = c("AT","BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR","DE", "EL","HU", "IE", "IT", "LV", "LT","LU", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"),
+                  col2 = c(29.8,26,40.5,29.5,31.8,26.2,27.5,30.7,27.1,30.7,31.7,33.6,29.7,29.2,35.2,35.7,36,33.4,26,30.2,34.7,34.6,25,24,34.9,28.9))
+names(df4)[names(df4) == "col1"] <- "geo"
+names(df4)[names(df4) == "col2"] <- "means"
+names(df4)
+tableHTML::tableHTML(df4)
+
+get_eurostat_geospatial(resolution = 10,
+                        nuts_level = 0,
+                        year = 2016)
+
+SHP_4 <- get_eurostat_geospatial(resolution = 10,
+                                 nuts_level = 0,
+                                 year = 2016)
+
+SHP_27_4 <- SHP_4 %>% 
+  select(geo) %>%
+  inner_join(df4, by = "geo") %>%
+  arrange(geo) %>%
+  st_as_sf()
+
+SHP_27_4 %>% 
+  ggplot() +
+  geom_sf() +
+  scale_x_continuous(limits = c(-10, 35)) +
+  scale_y_continuous(limits = c(35, 65)) +
+  theme_void()
+
+df_shp_4 <- df4 %>% 
+  select(geo, means) %>%
+  inner_join(SHP_27_3, by = "geo") %>%
+  st_as_sf()
+g5 <- df_shp_4 %>%
+  ggplot() +
+  labs(title = "Gini_Index in Europa") +
+  gg_theme4
+g5
+ggsave(filename = "Heatmap_Gini.png", plot = g5, width = 8, height  = 7, dpi = 1000)
+```
+
+#### 
+
+#### 2.3.2.2 Deskriptive Statistik Kontextuell
+
+```{r}
+
+sumtable(ess_subset, vars = c('polTeilhabe', 'hincfel', 'bildung', 'agea', 'geschlecht', 'GNP', 'Gini', 'Herkunft')
+          ,summ = list(
+           c('notNA(x)', 'mean(x)', 'median(x)', 'sd(x)', 'min(x)', 'max(x)', 'pctile(x)[25]',  'pctile(x)[75]')
+         ),
+ summ.names = list(
+         c('N', 'Mean', 'Median', 'Standard Error', 'Minimum', 'Maximum', '1 Quantil', '4 Quantil')
+         )
+         
+   ,labels = c("Möglichkeit zur pol. Teilhabe", "Fähigkeit mit Einkommen leben zu bestreiten", "Bildung (harmonisiert)", "Alter", "Geschlecht", "GNP per capita", "Gini-Koeffizient", "Herkunft aus Europa"))#, file = 'Deskriptive Statistik Control')
+
+
+
+sumtable(ess_subset, vars = c('GNP', 'Gini')
+          ,summ = list(
+           c('notNA(x)', 'mean(x)', 'median(x)', 'sd(x)', 'min(x)', 'max(x)', 'pctile(x)[25]',  'pctile(x)[75]')
+         ),
+ summ.names = list(
+         c('N', 'Mean', 'Median', 'Standard Error', 'Minimum', 'Maximum', '1 Quantil', '4 Quantil')
+         )
+         ,title = "Deskriptive Statistik kontextuellen Variablen"
+   ,labels = c("GNP per capita", "Gini-Koeffizient"), file = 'Deskriptive Statistik Kontextuell')
+```
+
+# 3. Regression
+
+-   x = corruption, y = rep_institution, reg_institution
+
+-   Es wird zur besseren Betrachtung noch eine Unterscheidung nach Ländern durchgeführt, um zu sehen, ob es unterschiedliche Werte gibt, für die Unterscheidung zwischen den Ländern
+
+## 3.1 Nullmodell
+
+bevor es zu den Regression kommt, sollen die Daten, für eine vereinfachte Replizierung gespeichert werden, um so das Problem zu umgehen, dass aufgrund der Imputation, die Ergebnisse der Regressionen sich immer minimal unterscheiden können, zu den Ergebnissen, welcher in der Bachelorarbeit präsentiert wurden.
+
+```{r}
+#save(ess_subset, file = "Analysedaten.Rda")
+#Falls diese Daten genutzt werden wollen, können sie einfache mit load() eingelesen werden, oder durch Drag and Drop 
+```
+
+### 3.1.1 Nullmodell - repräsentative Institutionen
+
+```{r}
+#ess_subset$corruption <- order(as.factor(ess_subset$corruption))
+m1 <- lmer(rep_institution ~ 1 + (1|cntry), data = ess_subset)
+summary(m1)
+tab_model(m1)
+performance::icc(m1)
+
+
+#Modell mit Variation über die Länder 
+
+m2 <- lmer(rep_institution ~ 1 + cntry + (1 | cntry), data = ess_subset)
+summary(m2)
+tab_model(m2, p.style ="star")
+performance::icc(m2)
+```
+
+### 3.1.2 Nullmodell - regulative Institutionen
+
+```{r}
+m3 <- lmer(reg_institution ~ 1 + (1|cntry), data = ess_subset)
+summary(m3)
+tab_model(m3)
+performance::icc(m3)
+
+
+#Modell mit Variation über die Länder 
+
+m4 <- lmer(reg_institution ~ 1 + cntry + (1 | cntry), data = ess_subset)
+summary(m4)
+tab_model(m4, p.style = "stars")
+performance::icc(m4)
+```
+
+#### Blueannahmen und Tabellen
+
+```{r}
+#Prüfung des Modells 
+#model_dashboard(m1)
+#model_dashboard(m2)
+#model_dashboard(m3)
+#model_dashboard(m4)
+
+#Tabelle 
+tab_model(m1, m2, m3, m4, 
+          show.aic = T, 
+          show.dev = T,
+          p.style = "stars", 
+          title = "Nullmodell des Efekts wahrgenommener Korruption auf das institutionelle politische Vertrauen",
+          dv.labels = c("Vertrauen in repräsenative Institutionen", "Variation über die Länder", "Vertrauen in regulative Institutionen", "Variation über die Länder"),file = "Nullmodell.html")
+```
+
+## 3.2 Regression Ebene 1
+
+-   Ebene 1 mit Fixed slopes und random intercepts
+
+    -   Nur UVs auf Individualebene (= pol. Interesse, Geschlecht, Alter, Bildung, Einkommen, Politische Teilhabe, Fähigkeit zur pol. Teilhabe, Religiosität und Religionszugehörigkeit)
+
+### 3.2.1 Regression Ebene 1 - repräsentative Institutionen
+
+```{r}
+#fixed slope Ebene 1
+
+m5 <- lmer(rep_institution ~ 1 + corruption +
+              PolInteresse_dummy +
+              geschlecht +
+              Alter_zentriert +
+              Bildung + 
+              Einkommen + 
+              polTeilhabe +
+              religionszugehörigkeit +
+              (1 | cntry), data = ess_subset)
+tab_model(m5, p.style = "stars")
+```
+
+### 3.2.2 Regression Ebene 1 - regulative Institutionen
+
+```{r}
+#fixed slope Ebene 1
+
+m6 <- lmer(reg_institution ~ 1 + corruption +
+              PolInteresse_dummy +
+              geschlecht +
+              Alter_zentriert +
+              Bildung + 
+              Einkommen + 
+              polTeilhabe +
+              religionszugehörigkeit +
+              (1 | cntry), data = ess_subset)
+tab_model(m6, p.style = "stars", show.aic = T)
+```
+
+#### Blueannahmen und Tabellen
+
+```{r}
+#Prüfung des Modells 
+#model_dashboard(m5)
+x <- check_collinearity(m5)
+plot(x)
+#model_dashboard(m6)
+pander(anova(m5, m6))
+
+#Tabelle
+
+tab_model(m5, m6,
+          show.aic = T,
+          show.dev = T,
+          p.style = "stars",
+          title = "MLM des Effekts wahrgenommener Korruption auf das institutionelle politische Vertrauen Ebene I",
+          dv.labels = c("Vertrauen in repräsentative Institutionen", "Vertrauen in regulative Institutionen"),
+          pred.labels = c("Intercept", "wahrgenommene Korruption", "politisches Interesse (kein Interesse = Referenz)", "Frauen (Männer = Refernz)", "Alter (Mittelwertszentriert, 51 Jahre)", "Mittlere Bildung", "Hohe Bildung", "Einkommen", "politische Teilhabe (System)", "Katholizismus", "Protestantismus", "Orthodoxie", "andere Form von Christentum", "Judentum", "Islam"),
+          file = "Ebene1.html")
+```
+
+## 3.3 Regression Ebene I+II
+
+-   Ebene I+II mit random slopes und random intercepts
+
+### 3.3.1 Regression Ebene I+II - repräsentative Institutionen
+
+```{r}
+#random slope Ebene I+II
+
+m7 <- lmer(rep_institution ~ 1 + corruption +
+              PolInteresse_dummy +
+              geschlecht +
+              Alter_zentriert +
+              Bildung + 
+              Einkommen + 
+              polTeilhabe +
+              religionszugehörigkeit +
+              Herkunft+ 
+              Gini + 
+              (1  + corruption | cntry), data = ess_subset)
+tab_model(m7, p.style = "stars")
+```
+
+### 3.3.2 Regression Ebene I+II - regulative Institutionen
+
+```{r}
+m8 <- lmer(reg_institution ~ 1 + corruption +
+              PolInteresse_dummy +
+              geschlecht +
+              Alter_zentriert +
+              Bildung + 
+              Einkommen + 
+              polTeilhabe +
+              religionszugehörigkeit +
+              Herkunft +
+              (1| cntry), data = ess_subset)
+vif(m8)
+summary(m8)
+
+tab_model(m8, p.style = "stars", show.aic = T)
+
+m8.1 <- lmer(reg_institution ~ 1 + corruption +
+              PolInteresse_dummy +
+              geschlecht +
+              Alter_zentriert +
+              Bildung + 
+              Einkommen + 
+              polTeilhabe +
+              religionszugehörigkeit +
+              Herkunft +
+              Gini +
+              (1 + corruption | cntry), data = ess_subset)
+vif(m8.1)
+tab_model(m8.1, p.style = "stars", show.aic = T)
+m8.2 <- lmer(reg_institution ~ 1 + corruption +
+              PolInteresse_dummy +
+              geschlecht +
+              Alter_zentriert +
+              Bildung + 
+              Einkommen + 
+              polTeilhabe +
+              religionszugehörigkeit +
+              Herkunft + 
+              GNP +
+              Gini + 
+              (1 | cntry), data = ess_subset)
+vif(m8.2)
+tab_model(m8.2, p.style = "stars", show.aic = T)
+x3 <- check_collinearity(m8.2)
+plot(x3)
+anova(m5, m6, m7, m8.1)
+```
+
+#### Blueannahmen und Tabellen
+
+-   nach den Robustheitstests (= VIF) zeigt sich, das GNP nicht ins Modell aufgenommen werden darf, da sie die Unsicherheit der Parameter erhöhen aufgrund von Kolinearität und müssen aus dem Modell entfernt werden
+
+-   Die Modelle ohne Kontrollvariablen auf der Kontextebene, haben ein höheres AIC und BIC und stellen somit keine Verbesserung des Modells dar
+
+-   Weiterhin zeigt sich, dass die Herkunft als Dummy im Vergleich zu dem ohne ein höheres VIF hat Außerdem zeigt sich keine Modellverbesserung, weshalb es sinnlos ist diese Modell zu nutzen und sie dürfen nicht interpretiert werden. Auch der Interaktionseffekt führt zu keiner Verbesserung des Modells
+
+```{r}
+#Prüfung des Modells 
+#model_dashboard(m7)
+x1 <- check_collinearity(m7)
+plot(x1)
+#model_dashboard(m8.1)
+pander(anova(m5, m6, m7, m8.1))
+
+#Tabelle
+tab_model(m7, m8.1,
+          show.aic = T,
+          show.dev = T,
+          p.style = "stars",
+          title = "MLM des Effekts wahrgenommener Korruption auf das institutionelle politische Vertrauen Ebene I+II",
+          dv.labels = c("Vertrauen in repräsentative Institutionen", "Vertrauen in regulative Institutionen"),
+          pred.labels = c("Intercept", "wahrgenommene Korruption", "politisches Interesse (kein Interesse = Referenz)", "Frauen (Männer = Refernz)", "Alter (Mittelwertszentriert, 51 Jahre)", "Mittlere Bildung", "hohe Bildung", "Einkommen", "politische Teilhabe (System)", "Katholizismus", "Protestantismus", "Orthodoxie", "andere Form von Christentum", "Judentum", "Islam", "EU-Beitritt nach oder 2004", "EU-Beitritt vor 2004", "Gini"),
+          file = "Ebene2.html")
+```
